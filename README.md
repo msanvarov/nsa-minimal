@@ -5,6 +5,8 @@ A minimal, readable PyTorch implementation of **Native Sparse Attention (NSA)**.
 > **Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention**
 > Yuan et al., DeepSeek-AI — [arXiv:2502.11089](https://arxiv.org/abs/2502.11089) (ACL 2025)
 
+**Interactive demo:** <https://nsa-minimal.netlify.app>. Drag the sliders and watch the mechanism run in your browser.
+
 NSA replaces full attention with three branches whose outputs are mixed by a
 learned per-head gate (Eq. 5):
 
