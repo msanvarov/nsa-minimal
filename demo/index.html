@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NSA — interactive demo</title>
+<meta name="description" content="See which keys DeepSeek's Native Sparse Attention reads for each query: compression, block selection and a sliding window, computed live in your browser.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body,{delimiters:[{left:'\\[',right:'\\]',display:true},{left:'\\(',right:'\\)',display:false}],throwOnError:false})"></script>
+<style>
+:root{
+  --bg:#fbfaf7; --panel:#ffffff; --ink:#1b1c1f; --muted:#62656d; --line:#e4e2dc;
+  --accent:#2f5bd3; --accent-2:#d0582f; --good:#1f8a5b; --warn:#b7791f;
+  --code-bg:#f2f0ea;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#111216; --panel:#181a20; --ink:#e8e8ea; --muted:#9a9ca5; --line:#2a2d35;
+    --accent:#7b9cff; --accent-2:#ff8a5c; --good:#4fd18f; --warn:#e8b04a;
+    --code-bg:#1f2229;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+main{max-width:1080px;margin:0 auto;padding:40px 16px 80px}
+a{color:var(--accent)}
+code{overflow-wrap:anywhere}
+header .kicker{font:600 12px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+header h1{font-size:clamp(26px,4vw,38px);line-height:1.15;margin:10px 0 8px;letter-spacing:-.01em}
+header .cite{color:var(--muted);margin:0 0 4px}
+header .links{display:flex;gap:16px;flex-wrap:wrap;font-size:14px;margin-top:8px}
+.lede{font-size:17px;max-width:72ch;margin:24px 0}
+.eq .katex-display{margin:.4em 0}
+.eq{font-size:15px;background:var(--code-bg);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;margin:16px 0}
+section.demo{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin:28px 0}
+section.demo h2{font-size:19px;margin:0 0 4px}
+section.demo > p.sub{color:var(--muted);margin:0 0 16px;max-width:75ch}
+.grid{display:grid;grid-template-columns:260px 1fr;gap:24px;align-items:start}
+@media (max-width:760px){.grid{grid-template-columns:1fr}}
+.controls{display:flex;flex-direction:column;gap:14px}
+.ctl label{display:block;position:relative;padding-right:5.5em;font-size:13px;color:var(--muted);margin-bottom:4px}
+.ctl label output{position:absolute;right:0;top:0;font-family:var(--mono);color:var(--ink)}
+input[type=range]{width:100%;accent-color:var(--accent)}
+select,button,input[type=text],input[type=number]{font:inherit;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 10px}
+button{cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.viz{min-width:0}
+canvas,svg.chart{display:block;width:100%;height:auto;max-width:100%}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px}
+.stat{border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.stat .k{font-size:12px;color:var(--muted)}
+.stat .v{font:600 18px/1.3 var(--mono)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.caption{font-size:13px;color:var(--muted);margin-top:8px}
+.scope{color:var(--muted);font-size:14px;max-width:75ch}
+.scope h2{color:var(--ink);font-size:17px}
+footer{color:var(--muted);font-size:13px;margin-top:48px;border-top:1px solid var(--line);padding-top:16px}
+</style>
+<style>
+table.branches{border-collapse:collapse;width:100%;font-size:14px;margin:16px 0}
+table.branches th,table.branches td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+table.branches th{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:8px;vertical-align:-1px}
+#grid{max-width:560px;cursor:crosshair}
+.row2{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.toggle{display:flex;gap:8px;align-items:center;font-size:14px}
+#rowinfo{font:13px/1.5 var(--mono);margin-top:10px;min-height:3em}
+.ctl select{width:100%}
+.note{font-size:12px;color:var(--muted)}
+.tablewrap{overflow-x:auto}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="kicker">Paper recreation · interactive demo</div>
+  <h1>Native Sparse Attention: Hardware-Aligned and Natively Trainable Sparse Attention</h1>
+  <p class="cite">Yuan et al., DeepSeek-AI · ACL 2025 · <a href="https://arxiv.org/abs/2502.11089">arXiv:2502.11089</a></p>
+  <div class="links"><a href="https://github.com/msanvarov/nsa-minimal">Source: msanvarov/nsa-minimal</a></div>
+</header>
+
+<p class="lede">Full attention makes every query read every earlier key, so the cost grows with the square of the context. NSA lets each query read three small views of the past: a summary vector per block of keys, the raw tokens of the few blocks those summaries rate highest, and the last \(w\) tokens. A learned per-head gate mixes the three. As the context grows, the share of keys each query reads gets smaller.</p>
+
+<div class="tablewrap">
+<table class="branches">
+  <thead><tr><th>branch</th><th>what it reads</th><th>why</th></tr></thead>
+  <tbody>
+    <tr><td><span class="swatch" style="background:var(--good)"></span><b>compression</b></td><td>one summary vector per block of \(l\) keys, stride \(d\)</td><td>global context, cheap</td></tr>
+    <tr><td><span class="swatch" style="background:var(--accent-2)"></span><b>selection</b></td><td>the \(n\) highest-scoring blocks of \(l'\) raw tokens</td><td>fine-grained precision</td></tr>
+    <tr><td><span class="swatch" style="background:var(--accent)"></span><b>sliding window</b></td><td>the last \(w\) tokens</td><td>local detail, so the other two branches don't have to learn it</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="eq">\[
+\begin{aligned}
+o_t &= \sum_{c \in \{\mathrm{cmp},\,\mathrm{slc},\,\mathrm{win}\}} g_t^{c}\,\mathrm{Attn}\big(q_t,\ \tilde K_t^{c},\ \tilde V_t^{c}\big) && \text{(Eq. 5)}\\
+\tilde K_t^{\mathrm{cmp}} &= \Big\{\, \varphi\big(k_{id+1\,:\,id+l}\big) \;\Big|\; 0 \le i \le \big\lfloor \tfrac{t-l}{d} \big\rfloor \Big\} && \text{(Eq. 7)}\\
+p_t^{\mathrm{cmp}} &= \mathrm{softmax}\big(q_t^{\top} \tilde K_t^{\mathrm{cmp}} / \sqrt{d_k}\big) && \text{(Eq. 8)}\\
+p_t^{\mathrm{slc}}[j] &= \sum_{m=0}^{l'/d-1} \sum_{n=0}^{l/d-1} p_t^{\mathrm{cmp}}\Big[\tfrac{l'}{d}\,j + m + n\Big] && \text{(Eq. 9)}\\
+p_t^{\mathrm{slc}'} &= \sum_{h=1}^{H} p_t^{\mathrm{slc},(h)} \quad \text{(heads of one GQA group)} && \text{(Eq. 10)}\\
+\mathcal I_t &= \operatorname{top-}n\big(p_t^{\mathrm{slc}'}\big) \;\cup\; \{\text{initial block},\ 2\ \text{local blocks}\} && \text{(Eq. 11)}
+\end{aligned}
+\]</div>
+<p class="scope" style="margin-top:0">Choosing blocks costs almost nothing extra. Block importance comes straight from the compression branch's own attention scores (Eq. 8–9). Summing those scores across a GQA group (Eq. 10) means every head in the group reads the same blocks, which is what the paper's kernel exploits.</p>
+
+<section class="demo">
+  <h2>Which keys does each query read?</h2>
+  <p class="sub">Each row is a query \(t\) and each column is a key. Colored cells are what that query reads. Hover a row to inspect it, click to pin it. Turn on the needle: one key is planted far outside the window, and the selection branch finds its block from the compressed scores alone.</p>
+  <div class="grid">
+    <div class="controls">
+      <div class="ctl"><label for="T">context length \(T\) <output for="T"></output></label><input id="T" type="range" min="64" max="1024" step="64" value="256"></div>
+      <div class="ctl"><label for="l">compression block \(l\)</label><select id="l"><option>8</option><option selected>16</option><option>32</option><option>64</option></select></div>
+      <div class="ctl"><label for="d">compression stride \(d\)</label><select id="d"><option>4</option><option selected>8</option><option>16</option><option>32</option></select></div>
+      <div class="ctl"><label for="lp">selection block \(l'\)</label><select id="lp"><option>8</option><option>16</option><option selected>32</option><option>64</option><option>128</option></select></div>
+      <div class="ctl"><label for="n">selected blocks \(n\) <output for="n"></output></label><input id="n" type="range" min="3" max="16" step="1" value="4"></div>
+      <div class="ctl"><label for="w">sliding window \(w\) <output for="w"></output></label><input id="w" type="range" min="8" max="256" step="8" value="64"></div>
+      <div class="ctl"><label for="q">inspect query \(t\) <output for="q"></output></label><input id="q" type="range" min="0" max="255" step="1" value="200"></div>
+      <label class="toggle"><input id="needle" type="checkbox" checked> plant a needle key</label>
+      <div class="row2"><button id="reseed">Resample q, k</button></div>
+      <p class="note">The page keeps the paper's constraints: \(d < l\), \(l\) and \(l'\) are multiples of \(d\), and \(l \le l'\) as in all its configs. An invalid choice gets corrected for you.</p>
+    </div>
+    <div class="viz">
+      <canvas id="grid" role="img" aria-label="Query by key grid showing which keys each NSA branch reads"></canvas>
+      <div class="legend">
+        <span><i style="background:var(--accent)"></i>window</span>
+        <span><i style="background:var(--accent-2)"></i>selected block</span>
+        <span><i id="bothsw"></i>window + selected</span>
+        <span><i id="cmpsw"></i>seen only as a compressed summary</span>
+        <span><i id="unsw"></i>not read</span>
+        <span>▼ needle key</span>
+      </div>
+      <canvas id="detail" role="img" aria-label="Selection scores per block for the inspected query"></canvas>
+      <div class="caption">Inspected query: bars are the per-block selection scores \(p_t^{\mathrm{slc}}\) from Eq. 9. Orange bars were chosen, outlined bars were forced (initial and 2 local blocks). The strip below the bars is the same row of the grid.</div>
+      <div id="rowinfo"></div>
+      <div class="stats" id="stats"></div>
+    </div>
+  </div>
+</section>
+
+<section class="demo">
+  <h2>Cost vs context length</h2>
+  <p class="sub">The share of the causal (query, key) pairs that NSA reads, counted the way <code>test_nsa.py</code> counts it: every branch's mask entries are summed, and compressed keys count once each. Dense attention is 1.0. The dashed curve uses the test's settings (\(l=32,\ d=16,\ l'=32,\ n=4,\ w=32\)) and reproduces its numbers: 0.97 at \(T=256\), 0.57 at 512, 0.33 at 1024 and 0.20 at 2048.</p>
+  <canvas id="cost" role="img" aria-label="Fraction of keys read versus context length"></canvas>
+  <div class="legend">
+    <span><i style="background:var(--accent)"></i>your settings (dot = current T)</span>
+    <span><i style="background:var(--accent-2)"></i>test_nsa.py settings</span>
+    <span><i style="background:var(--muted)"></i>dense attention</span>
+  </div>
+  <div class="stats" id="coststats"></div>
+</section>
+
+<section class="scope">
+  <h2>What this demo simplifies</h2>
+  <p>This is the <b>reference</b> form of NSA, the same as the repo. It builds full \((T, S)\) masks per branch, so it is \(O(T^2)\) and shows <i>which</i> keys are read, not the wall-clock speedup. The paper's 9–11× gains come from a blockwise Triton kernel that loads each KV block once per GQA group. Neither the repo nor this page has that kernel.</p>
+  <p>Keys are compressed with a plain <b>block mean</b>, standing in for the learned MLP \(\varphi\) (the repo's <code>BlockCompress</code>). The queries and keys are random and untrained: one 16-dimensional head in one GQA group, so Eq. 10's sum over heads has a single term. The gate in Eq. 5 only weights the branch outputs and never changes which keys are read, so it is left out here. The needle is a planted key plus a shared direction added to every query. It stands in for what training would teach the model to look for.</p>
+  <p>A detail of Eq. 9 as the repo ports it: selection block \(j\) sums compressed blocks \(\tfrac{l'}{d}j + m + n\), and those windows reach past the end of block \(j\). So a key in the first \(l\) positions of a block also adds score to the block before it. The needle sits on the last key of its block, where only its own block gets the credit.</p>
+</section>
+
+<footer>Everything on this page runs in your browser in plain JavaScript — a small-scale re-run of the mechanism in the repo's PyTorch code, not the trained model.</footer>
+</main>
+<script>
+// ---- shared helpers (keep identical across the five demos) ----
+function rng(seed){ // mulberry32
+  let a = seed >>> 0;
+  const u = () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  u.normal = () => { let x = 0; while (x === 0) x = u(); return Math.sqrt(-2 * Math.log(x)) * Math.cos(2 * Math.PI * u()); };
+  return u;
+}
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+// Crisp canvas sized to its CSS width; returns 2d ctx and logical size.
+function setupCanvas(cv, aspect){
+  const w = cv.clientWidth || cv.parentElement.clientWidth, h = Math.round(w * aspect), d = devicePixelRatio || 1;
+  cv.width = w * d; cv.height = h * d; cv.style.height = h + 'px';
+  const ctx = cv.getContext('2d'); ctx.setTransform(d, 0, 0, d, 0, 0); return { ctx, w, h };
+}
+// Sequential colormap 0..1 (light->accent). Diverging: pass {diverging:true} for -1..1.
+function color(v, opts = {}){
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const bg = dark ? [24,26,32] : [255,255,255];
+  const a = dark ? [123,156,255] : [47,91,211], b = dark ? [255,138,92] : [208,88,47];
+  let c = a, t = v;
+  if (opts.diverging){ c = v < 0 ? b : a; t = Math.abs(v); }
+  t = Math.max(0, Math.min(1, t));
+  return `rgb(${bg.map((x,i)=>Math.round(x + (c[i]-x)*t)).join(',')})`;
+}
+function heatmap(ctx, M, x, y, w, h, opts = {}){
+  const R = M.length, C = M[0].length, cw = w / C, ch = h / R;
+  for (let i = 0; i < R; i++) for (let j = 0; j < C; j++){
+    const v = M[i][j]; if (v === null || Number.isNaN(v)) continue;
+    ctx.fillStyle = color(v, opts); ctx.fillRect(x + j*cw, y + i*ch, Math.ceil(cw), Math.ceil(ch));
+  }
+  ctx.strokeStyle = css('--line'); ctx.strokeRect(x + .5, y + .5, w - 1, h - 1);
+}
+// Line chart. series: [{data:[[x,y],...], color, label, dash}]. opts: {logY, yMin, yMax, xLabel, yLabel}
+function lineChart(cv, series, opts = {}){
+  const { ctx, w, h } = setupCanvas(cv, opts.aspect || 0.45), pad = { l: 48, r: 12, t: 10, b: 30 };
+  ctx.clearRect(0, 0, w, h);
+  const tf = v => opts.logY ? Math.log10(Math.max(v, 1e-12)) : v;
+  const xs = series.flatMap(s => s.data.map(p => p[0])), ys = series.flatMap(s => s.data.map(p => tf(p[1])));
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = opts.yMin !== undefined ? tf(opts.yMin) : Math.min(...ys), y1 = opts.yMax !== undefined ? tf(opts.yMax) : Math.max(...ys);
+  const X = v => pad.l + (v - x0) / ((x1 - x0) || 1) * (w - pad.l - pad.r);
+  const Y = v => h - pad.b - (tf(v) - y0) / ((y1 - y0) || 1) * (h - pad.t - pad.b);
+  ctx.font = '11px ' + css('--mono'); ctx.fillStyle = css('--muted'); ctx.strokeStyle = css('--line');
+  for (let k = 0; k <= 4; k++){
+    const yv = y0 + (y1 - y0) * k / 4, py = h - pad.b - k / 4 * (h - pad.t - pad.b);
+    ctx.beginPath(); ctx.moveTo(pad.l, py); ctx.lineTo(w - pad.r, py); ctx.stroke();
+    const lab = opts.logY ? (p => p < 1e-3 || p >= 1e4 ? p.toExponential(0) : String(+p.toPrecision(2)))(10 ** yv) : (Math.abs(yv) >= 100 ? yv.toFixed(0) : yv.toPrecision(3));
+    ctx.textAlign = 'right'; ctx.fillText(lab, pad.l - 6, py + 4);
+  }
+  ctx.textAlign = 'center';
+  for (let k = 0; k <= 4; k++){ const xv = x0 + (x1 - x0) * k / 4; ctx.fillText(+xv.toPrecision(3), X(xv), h - pad.b + 16); }
+  if (opts.xLabel) ctx.fillText(opts.xLabel, (pad.l + w - pad.r) / 2, h - 2);
+  for (const s of series){
+    ctx.strokeStyle = s.color; ctx.lineWidth = s.width || 2; ctx.setLineDash(s.dash || []);
+    ctx.beginPath(); s.data.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))); ctx.stroke();
+  }
+  ctx.setLineDash([]); ctx.lineWidth = 1;
+  return { X, Y, ctx, w, h, pad };
+}
+function setStats(el, items){ // items: [[label, value], ...]
+  el.innerHTML = items.map(([k, v]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+}
+// Bind a range input to its <output> and a callback. Usage: <input id=x type=range> <output for=x>
+function bind(id, fn){
+  const el = document.getElementById(id), out = document.querySelector(`output[for="${id}"]`);
+  const f = el.dataset.fmt ? new Function('v', 'return ' + el.dataset.fmt) : v => v;
+  const go = () => { if (out) out.textContent = f(+el.value); fn(); };
+  el.addEventListener('input', go); if (out) out.textContent = f(+el.value);
+  return () => +el.value;
+}
+let __raf = 0; const schedule = fn => { cancelAnimationFrame(__raf); __raf = requestAnimationFrame(fn); };
+addEventListener('resize', () => window.render && schedule(window.render));
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => window.render && window.render());
+// ---- end shared helpers ----
+</script>
+<script>
+// ---- core (pure; tested in node) ----
+const DK = 16;
+
+// Eq. 9 as a matrix, ported from nsa.py _slc_from_cmp
+function slcFromCmp(nCmp, nSlc, l, d, lp){
+  const W = Array.from({ length: nSlc }, () => new Float64Array(nCmp));
+  for (let j = 0; j < nSlc; j++)
+    for (let m = 0; m < lp / d; m++)
+      for (let n = 0; n < l / d; n++){
+        const i = (lp / d) * j + m + n;
+        if (i < nCmp) W[j][i] += 1;
+      }
+  return W;
+}
+
+// Categories per (query t, key s): 0 above diagonal, 1 not read, 2 compressed only,
+// 3 window, 4 selected, 5 window + selected.
+function runNSA(T, cfg, seed, needle){
+  const { l, d, lp, n, w } = cfg, R = rng(seed);
+  const q = new Float64Array(T * DK), k = new Float64Array(T * DK);
+  for (let i = 0; i < T * DK; i++){ q[i] = R.normal(); k[i] = R.normal(); }
+  const u = new Float64Array(DK); let un = 0;
+  for (let i = 0; i < DK; i++){ u[i] = R.normal(); un += u[i] * u[i]; }
+  for (let i = 0; i < DK; i++) u[i] *= Math.sqrt(DK / un); // |u|^2 = DK
+  // last key of a block about a quarter in: Eq. 9 (as ported) credits it to that block only,
+  // whereas a key early in a block also lends score to the block before it
+  const needlePos = Math.min(T - 1, Math.max(1, Math.round(T / 4 / lp)) * lp + lp - 1);
+  if (needle){
+    for (let i = 0; i < DK; i++) k[needlePos * DK + i] = 6 * u[i];
+    for (let t = 0; t < T; t++) for (let i = 0; i < DK; i++) q[t * DK + i] += 1.5 * u[i];
+  }
+  // compressed keys: block mean (stand-in for the learned phi, Eq. 7)
+  const nCmp = Math.max(0, Math.floor((T - l) / d) + 1), nSlc = Math.ceil(T / lp);
+  const kc = new Float64Array(nCmp * DK);
+  for (let b = 0; b < nCmp; b++) for (let s = b * d; s < b * d + l; s++)
+    for (let i = 0; i < DK; i++) kc[b * DK + i] += k[s * DK + i] / l;
+  const W = slcFromCmp(nCmp, nSlc, l, d, lp), scale = 1 / Math.sqrt(DK);
+  const cat = new Uint8Array(T * T), rows = [];
+  for (let t = 0; t < T; t++){
+    // visible compressed blocks: block b spans [b*d, b*d+l), complete once b*d+l <= t+1
+    const nv = t + 1 >= l ? Math.min(nCmp, Math.floor((t + 1 - l) / d) + 1) : 0;
+    const p = new Float64Array(nCmp);
+    if (nv){
+      let mx = -Infinity;
+      for (let b = 0; b < nv; b++){
+        let s = 0; for (let i = 0; i < DK; i++) s += q[t * DK + i] * kc[b * DK + i];
+        p[b] = s * scale; if (p[b] > mx) mx = p[b];
+      }
+      let z = 0; for (let b = 0; b < nv; b++){ p[b] = Math.exp(p[b] - mx); z += p[b]; }
+      for (let b = 0; b < nv; b++) p[b] /= z;
+    }
+    const ps = new Float64Array(nSlc);
+    for (let j = 0; j < nSlc; j++){ let s = 0; for (let b = 0; b < nv; b++) s += W[j][b] * p[b]; ps[j] = s; }
+    const cur = Math.floor(t / lp), reach = [];
+    for (let j = 0; j < nSlc; j++) if (j * lp <= t) reach.push(j);
+    const forced = new Set(reach.filter(j => j === 0 || j === cur || j === cur - 1));
+    // top-n with forced blocks pinned to +inf, unreachable at -inf (dropped)
+    reach.sort((a, b) => (forced.has(b) - forced.has(a)) || (ps[b] - ps[a]));
+    const chosen = new Set(reach.slice(0, Math.min(n, nSlc)));
+    const cmpEnd = nv ? (nv - 1) * d + l : 0;
+    let read = { cmp: nv, slc: 0, win: 0 };
+    for (let s = 0; s <= t; s++){
+      const sel = chosen.has(Math.floor(s / lp)), win = t - s < w;
+      read.slc += sel; read.win += win;
+      cat[t * T + s] = sel && win ? 5 : sel ? 4 : win ? 3 : s < cmpEnd ? 2 : 1;
+    }
+    rows.push({ ps, chosen, forced, nv, read });
+  }
+  return { T, cat, rows, nCmp, nSlc, needlePos };
+}
+
+// Same count as test_nsa.py keys_read_per_head, without building masks. Needs n >= 3
+// so the forced current block is always chosen and every other chosen block is full.
+function keysRead(T, { l, d, lp, n, w }){
+  const nCmp = Math.max(0, Math.floor((T - l) / d) + 1);
+  let tot = 0;
+  for (let t = 0; t < T; t++){
+    tot += t + 1 >= l ? Math.min(nCmp, Math.floor((t + 1 - l) / d) + 1) : 0;
+    const cur = Math.floor(t / lp);
+    tot += (t - cur * lp + 1) + lp * (Math.min(n, cur + 1) - 1);
+    tot += Math.min(w, t + 1);
+  }
+  return tot;
+}
+const fracRead = (T, cfg) => keysRead(T, cfg) / (T * (T + 1) / 2);
+const TEST_CFG = { l: 32, d: 16, lp: 32, n: 4, w: 32 };
+// ---- end core ----
+
+const $ = id => document.getElementById(id);
+const hex = s => { s = s.replace('#', ''); return [0, 2, 4].map(i => parseInt(s.slice(i, i + 2), 16)); };
+const mix = (a, b, t) => a.map((x, i) => Math.round(x + (b[i] - x) * t));
+let seed = 7, res = null, pinned = false;
+
+function cfgFromUI(){
+  let l = +$('l').value, d = +$('d').value, lp = +$('lp').value;
+  // paper constraints: d < l, l % d == 0, l' % d == 0 (all powers of two here)
+  if (d >= l){ d = l / 2; $('d').value = d; }
+  // and l <= l' like every config in the paper; with l > l' the ported Eq. 9 credits a key to earlier blocks
+  if (lp < l){ lp = l; $('lp').value = lp; }
+  return { T: +$('T').value, l, d, lp, n: +$('n').value, w: +$('w').value };
+}
+
+function palette(){
+  const panel = hex(css('--panel')), acc = hex(css('--accent')), acc2 = hex(css('--accent-2')), good = hex(css('--good'));
+  return [panel, hex(css('--code-bg')), mix(panel, good, 0.35), acc, acc2, mix(acc, acc2, 0.5)];
+}
+
+let img = null;
+function compute(){
+  const c = cfgFromUI();
+  res = runNSA(c.T, c, seed, $('needle').checked);
+  const base = runNSA(c.T, c, seed, false);
+  res.cfg = c;
+  // how often the needle's block is selected by queries that can't see it through the window
+  const nb = Math.floor(res.needlePos / c.lp), far = [];
+  for (let t = res.needlePos + c.w; t < c.T; t++) far.push(t);
+  const hit = r => far.length ? far.filter(t => r.rows[t].chosen.has(nb)).length / far.length : NaN;
+  res.hitOn = hit(res); res.hitOff = hit(base); res.farCount = far.length;
+  // paint T x T image once per config
+  const P = palette(), T = c.T, off = document.createElement('canvas');
+  off.width = off.height = T;
+  const octx = off.getContext('2d'), id = octx.createImageData(T, T);
+  for (let i = 0; i < T * T; i++){ const col = P[res.cat[i]]; id.data.set([col[0], col[1], col[2], 255], i * 4); }
+  octx.putImageData(id, 0, 0); img = off;
+  const qs = $('q'); qs.max = T - 1; if (+qs.value > T - 1) qs.value = T - 1;
+  document.querySelector('output[for="q"]').textContent = qs.value;
+}
+
+function drawGrid(){
+  const cv = $('grid'), { ctx, w } = setupCanvas(cv, 1), T = res.T;
+  const x0 = 6, y0 = 12, S = w - 12;
+  ctx.clearRect(0, 0, w, w);
+  ctx.imageSmoothingEnabled = S < T;
+  ctx.drawImage(img, x0, y0, S, S);
+  ctx.strokeStyle = css('--line'); ctx.strokeRect(x0 + .5, y0 + .5, S - 1, S - 1);
+  // needle marker
+  if ($('needle').checked){
+    const nx = x0 + (res.needlePos + .5) / T * S;
+    ctx.fillStyle = css('--ink'); ctx.beginPath(); ctx.moveTo(nx - 5, 1); ctx.lineTo(nx + 5, 1); ctx.lineTo(nx, 10); ctx.fill();
+  }
+  // inspected row
+  const t = +$('q').value, ry = y0 + (t + .5) / T * S;
+  ctx.strokeStyle = css('--ink'); ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(x0, ry); ctx.lineTo(x0 + S, ry); ctx.stroke(); ctx.setLineDash([]);
+  cv._geom = { y0, S, T };
+}
+
+function drawDetail(){
+  const cv = $('detail'), { ctx, w, h } = setupCanvas(cv, 0.26), t = +$('q').value, r = res.rows[t], c = res.cfg, T = res.T;
+  ctx.clearRect(0, 0, w, h);
+  const stripH = 12, barTop = 4, barBot = h - stripH - 8, bw = w / res.nSlc;
+  let mx = 0; r.ps.forEach(v => mx = Math.max(mx, v)); mx = mx || 1;
+  for (let j = 0; j < res.nSlc; j++){
+    const reach = j * c.lp <= t, bh = reach ? (r.ps[j] / mx) * (barBot - barTop) : 0, x = j * bw;
+    ctx.fillStyle = r.chosen.has(j) ? css('--accent-2') : css('--line');
+    ctx.fillRect(x + 1, barBot - bh, Math.max(1, bw - 2), bh);
+    if (r.forced.has(j)){ ctx.strokeStyle = css('--ink'); ctx.strokeRect(x + 1.5, barTop + .5, Math.max(1, bw - 3), barBot - barTop); }
+  }
+  // the grid row as a strip
+  const P = palette(), sw = w / T;
+  for (let s = 0; s < T; s++){ const col = P[res.cat[t * T + s]]; ctx.fillStyle = `rgb(${col})`; ctx.fillRect(s * sw, h - stripH, Math.ceil(sw), stripH); }
+  ctx.strokeStyle = css('--line'); ctx.strokeRect(.5, h - stripH + .5, w - 1, stripH - 1);
+
+  const sel = [...r.chosen].sort((a, b) => a - b).map(j => `${j}${r.forced.has(j) ? '*' : ''}`).join(', ');
+  const tot = r.read.cmp + r.read.slc + r.read.win;
+  $('rowinfo').textContent =
+    `query t=${t}: selected blocks [${sel}] (* = forced), window keys ${Math.max(0, t - c.w + 1)}–${t}, ` +
+    `${r.nv} compressed summaries. Reads ${tot} entries vs ${t + 1} for dense.`;
+}
+
+function drawCost(){
+  const c = res.cfg, Ts = []; for (let T = 64; T <= 2048; T += 32) Ts.push(T);
+  const mine = Ts.map(T => [T, fracRead(T, c)]), test = Ts.map(T => [T, fracRead(T, TEST_CFG)]);
+  const ymax = Math.max(1.05, ...mine.map(p => p[1]), ...test.map(p => p[1]));
+  const g = lineChart($('cost'), [
+    { data: Ts.map(T => [T, 1]), color: css('--muted'), width: 1, dash: [2, 3] },
+    { data: test, color: css('--accent-2'), dash: [6, 4] },
+    { data: mine, color: css('--accent') },
+  ], { yMin: 0, yMax: ymax, xLabel: 'context length T' });
+  const f = fracRead(c.T, c);
+  g.ctx.fillStyle = css('--accent'); g.ctx.beginPath(); g.ctx.arc(g.X(c.T), g.Y(f), 4.5, 0, 7); g.ctx.fill();
+  const r1 = keysRead(1024, c), r2 = keysRead(2048, c);
+  setStats($('coststats'), [
+    ['read at T=' + c.T, f.toFixed(3)],
+    ['read at T=2048', fracRead(2048, c).toFixed(3)],
+    ['test settings, T=2048', fracRead(2048, TEST_CFG).toFixed(3)],
+    ['cost ×, T 1024→2048', (r2 / r1).toFixed(2) + '× (dense 4×)'],
+  ]);
+}
+
+function drawStats(){
+  const c = res.cfg, T = c.T, tot = res.rows.reduce((a, r) => a + r.read.cmp + r.read.slc + r.read.win, 0);
+  const pct = v => Number.isNaN(v) ? '—' : (100 * v).toFixed(0) + '%';
+  setStats($('stats'), [
+    ['share of keys read', (tot / (T * (T + 1) / 2)).toFixed(3)],
+    ['compressed blocks', res.nCmp],
+    ['selection blocks', res.nSlc],
+    ['needle block picked', $('needle').checked ? `${pct(res.hitOn)} vs ${pct(res.hitOff)} without` : 'needle off'],
+  ]);
+  $('stats').lastChild.title = `Over the ${res.farCount} queries where the needle (key ${res.needlePos}) is outside the window.`;
+}
+
+window.render = () => { drawGrid(); drawDetail(); drawStats(); drawCost(); };
+const full = () => { compute(); render(); };
+
+['T', 'n', 'w'].forEach(id => bind(id, () => schedule(full)));
+['l', 'd', 'lp', 'needle'].forEach(id => $(id).addEventListener('change', full));
+bind('q', () => { drawGrid(); drawDetail(); });
+$('reseed').addEventListener('click', () => { seed++; full(); });
+
+const grid = $('grid');
+function rowAt(e){
+  const g = grid._geom, rect = grid.getBoundingClientRect(), y = e.clientY - rect.top - g.y0;
+  return Math.max(0, Math.min(g.T - 1, Math.floor(y / g.S * g.T)));
+}
+grid.addEventListener('pointermove', e => {
+  if (pinned) return;
+  $('q').value = rowAt(e); $('q').dispatchEvent(new Event('input'));
+});
+grid.addEventListener('click', e => {
+  pinned = !pinned; $('q').value = rowAt(e); $('q').dispatchEvent(new Event('input'));
+});
+
+// legend swatches that are mixes, not tokens
+function swatches(){ const P = palette(); $('bothsw').style.background = `rgb(${P[5]})`; $('cmpsw').style.background = `rgb(${P[2]})`; $('unsw').style.background = `rgb(${P[1]})`; $('unsw').style.outline = '1px solid ' + css('--line'); }
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { swatches(); compute(); render(); });
+swatches(); full();
+</script>
+</body>
+</html>

@@ -8,6 +8,10 @@ A minimal, readable PyTorch implementation of **Native Sparse Attention (NSA)**.
 NSA replaces full attention with three branches whose outputs are mixed by a
 learned per-head gate (Eq. 5):
 
+```math
+o_t^* = \sum_{c \in \{\text{cmp},\, \text{slc},\, \text{win}\}} g_t^c \cdot \operatorname{Attn}\big( q_t,\ \tilde{K}_t^c,\ \tilde{V}_t^c \big)
+```
+
 | branch | what it reads | why |
 |---|---|---|
 | **compression** | one learned summary vector per block of `l` keys, stride `d` | global context, cheap |
@@ -67,7 +71,7 @@ is 7%) in about 500 steps.
 
 This is the **reference** form of NSA, written to be read and checked against
 the paper, not to be fast. It materialises per-branch `(T, S)` masks and runs
-dense SDPA on each, so it is `O(T²)` in time and memory and reproduces NSA's
+dense SDPA on each, so it is $O(T^2)$ in time and memory and reproduces NSA's
 *outputs*, not its wall-clock speedup. The paper's 9-11x gains come from a
 blockwise Triton kernel that exploits the GQA-consistent block selection to load
 each KV block once; swap `masked_attn` in `nsa.py` for such a kernel if you need
